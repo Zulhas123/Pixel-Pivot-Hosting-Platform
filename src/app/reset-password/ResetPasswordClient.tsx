@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-export function ResetPasswordClient({ initialEmail }: { initialEmail: string }) {
-  const [email, setEmail] = useState(initialEmail);
+export function ResetPasswordClient({ initialUsername }: { initialUsername: string }) {
+  const [username, setUsername] = useState(initialUsername);
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +15,7 @@ export function ResetPasswordClient({ initialEmail }: { initialEmail: string }) 
     const res = await fetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, code, newPassword }),
+      body: JSON.stringify({ username, code, newPassword }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -29,10 +29,9 @@ export function ResetPasswordClient({ initialEmail }: { initialEmail: string }) 
   return (
     <div className="rounded-xl border border-black/10 p-5 space-y-3">
       <input
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        type="email"
-        placeholder="Email"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder="Username"
         className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
       />
       <input
@@ -60,4 +59,3 @@ export function ResetPasswordClient({ initialEmail }: { initialEmail: string }) 
     </div>
   );
 }
-

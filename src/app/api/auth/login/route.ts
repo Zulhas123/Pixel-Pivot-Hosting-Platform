@@ -7,7 +7,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 
 const LoginSchema = z.object({
-  email: z.string().email().max(200),
+  username: z.string().min(2).max(50),
   password: z.string().min(1).max(200),
 });
 
@@ -32,19 +32,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const user = await db.usersFindByEmail(parsed.data.email);
+  const user = await db.usersFindByUsername(parsed.data.username);
 
   if (!user) return Response.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
-  if (!user.emailVerified) {
-    return Response.json({ error: "EMAIL_NOT_VERIFIED" }, { status: 403 });
-  }
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);
   if (!ok) return Response.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
 
   const token = await signSessionToken({
     sub: user.id,
     role: user.role,
-    email: user.email,
+    username: user.username,
+    email: user.email || undefined,
     name: user.name,
   });
 

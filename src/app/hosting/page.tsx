@@ -36,7 +36,7 @@ export default async function HostingPage() {
                 {p.features}
               </p>
               <Link
-                href={`/dashboard?packageId=${encodeURIComponent(p.id)}`}
+                href={`/order?packageId=${encodeURIComponent(p.id)}`}
                 className="mt-4 inline-block rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
               >
                 Order this plan

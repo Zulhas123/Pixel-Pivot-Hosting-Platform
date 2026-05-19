@@ -4,9 +4,9 @@ import { ResetPasswordClient } from "./ResetPasswordClient";
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string }>;
+  searchParams: Promise<{ username?: string }>;
 }) {
-  const { email } = await searchParams;
+  const { username } = await searchParams;
   return (
     <div className="mx-auto max-w-md space-y-6">
       <div>
@@ -16,9 +16,8 @@ export default async function ResetPasswordPage({
         </p>
       </div>
       <Suspense fallback={<div className="rounded-xl border border-black/10 p-5">Loading…</div>}>
-        <ResetPasswordClient initialEmail={email ?? ""} />
+        <ResetPasswordClient initialUsername={username ?? ""} />
       </Suspense>
     </div>
   );
 }
-

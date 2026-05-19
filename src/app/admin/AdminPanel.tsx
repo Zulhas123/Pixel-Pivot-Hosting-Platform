@@ -42,6 +42,10 @@ export function AdminPanel() {
     rocketNumber: "",
   });
   const [msg, setMsg] = useState<string | null>(null);
+  const [tab, setTab] = useState<"packages" | "orders" | "logs" | "notifications">("orders");
+  const [logs, setLogs] = useState<
+    Array<{ id: string; level: string; message: string; createdAt: string; meta: unknown }>
+  >([]);
 
   async function refresh() {
     const [pkgRes, orderRes, settingsRes] = await Promise.all([
@@ -55,6 +59,12 @@ export function AdminPanel() {
     setPackages(pkgData.packages ?? []);
     setOrders(orderData.orders ?? []);
     setSettings(settingsData.settings ?? settings);
+  }
+
+  async function refreshLogs() {
+    const res = await fetch("/api/admin/logs?limit=100", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    setLogs(data.logs ?? []);
   }
 
   useEffect(() => {
@@ -143,11 +153,37 @@ export function AdminPanel() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["orders", "Order list"],
+            ["packages", "Add package"],
+            ["logs", "Logs"],
+            ["notifications", "Notifications"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setTab(key);
+              if (key === "logs") refreshLogs().catch(() => {});
+            }}
+            className={`rounded-md px-3 py-2 text-sm ${
+              tab === key ? "bg-blue-600 text-white" : "border border-black/10 hover:bg-black/5"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {msg ? (
         <div className="rounded-xl border border-black/10 bg-blue-50 p-4 text-sm">{msg}</div>
       ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      {tab === "packages" ? (
+        <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-black/10 p-5 space-y-3">
           <h2 className="text-lg font-semibold">Mobile banking settings</h2>
           <input
@@ -191,10 +227,12 @@ export function AdminPanel() {
             Create
           </button>
         </form>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Pending payments</h2>
+      {tab === "notifications" ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Pending payments</h2>
         {pendingPayments.length === 0 ? (
           <div className="rounded-xl border border-dashed border-black/20 p-6 text-sm text-black/70">No pending payments.</div>
         ) : (
@@ -231,10 +269,12 @@ export function AdminPanel() {
             ))}
           </div>
         )}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Packages</h2>
+      {tab === "packages" ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Packages</h2>
         {packages.length === 0 ? (
           <div className="rounded-xl border border-dashed border-black/20 p-6 text-sm text-black/70">No packages.</div>
         ) : (
@@ -251,49 +291,88 @@ export function AdminPanel() {
             ))}
           </div>
         )}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Recent orders</h2>
-        {orders.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-black/20 p-6 text-sm text-black/70">
-            No orders.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orders.slice(0, 10).map((o) => (
-              <div key={o.id} className="rounded-xl border border-black/10 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">
-                      {o.user.email} · {o.domain}
-                    </p>
-                    <p className="mt-1 text-sm text-black/70">
-                      {o.package.title} · ৳{o.amountBdt} · {o.durationMo}mo · Status {o.status}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setOrderStatus(o.id, "ACTIVE")}
-                      className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-                    >
-                      Mark active
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOrderStatus(o.id, "REJECTED")}
-                      className="rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-black/5"
-                    >
-                      Reject
-                    </button>
+      {tab === "orders" ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Order list</h2>
+          {orders.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-black/20 p-6 text-sm text-black/70">
+              No orders.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {orders.map((o) => (
+                <div key={o.id} className="rounded-xl border border-black/10 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">
+                        {o.user.email} · {o.domain}
+                      </p>
+                      <p className="mt-1 text-sm text-black/70">
+                        {o.package.title} · ৳{o.amountBdt} · {o.durationMo}mo · Status {o.status}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOrderStatus(o.id, "ACTIVE")}
+                        className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOrderStatus(o.id, "REJECTED")}
+                        className="rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-black/5"
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {tab === "logs" ? (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Logs</h2>
+            <button
+              type="button"
+              onClick={() => refreshLogs().catch(() => {})}
+              className="rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-black/5"
+            >
+              Refresh
+            </button>
           </div>
-        )}
-      </section>
+          {logs.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-black/20 p-6 text-sm text-black/70">
+              No logs yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {logs.map((l) => (
+                <div key={l.id} className="rounded-xl border border-black/10 p-4">
+                  <p className="text-xs text-black/50">{new Date(l.createdAt).toLocaleString()}</p>
+                  <p className="mt-1 text-sm font-medium">
+                    [{l.level}] {l.message}
+                  </p>
+                  {l.meta ? (
+                    <pre className="mt-2 overflow-auto rounded-lg bg-black/5 p-3 text-xs">
+                      {JSON.stringify(l.meta, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

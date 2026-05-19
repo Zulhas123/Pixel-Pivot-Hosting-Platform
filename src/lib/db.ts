@@ -67,6 +67,7 @@ async function ensureSchema(db: Database) {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      username TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL UNIQUE,
       phone TEXT,
       address TEXT,
@@ -79,6 +80,14 @@ async function ensureSchema(db: Database) {
       reset_code_expires INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS logs (
+      id TEXT PRIMARY KEY,
+      level TEXT NOT NULL,
+      message TEXT NOT NULL,
+      meta_json TEXT,
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS packages (
@@ -96,15 +105,18 @@ async function ensureSchema(db: Database) {
 
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT,
       package_id TEXT NOT NULL,
       domain TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      customer_email TEXT,
       duration_mo INTEGER NOT NULL,
       amount_bdt INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'PENDING',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
       FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE RESTRICT
     );
 
@@ -132,6 +144,40 @@ async function ensureSchema(db: Database) {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Backfill / migrate legacy tables if they were created before new columns existed.
+  const userCols = rowsFromStmt(db.prepare(`PRAGMA table_info(users)`)).map((r) => r.name as string);
+  if (!userCols.includes("username")) {
+    db.run(`ALTER TABLE users ADD COLUMN username TEXT`);
+    // Fill username from email prefix if possible.
+    db.run(`UPDATE users SET username = COALESCE(username, substr(email, 1, instr(email, '@') - 1)) WHERE username IS NULL`);
+    // Enforce non-null by filling any remaining.
+    db.run(`UPDATE users SET username = COALESCE(username, id) WHERE username IS NULL`);
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username)`);
+  }
+
+  // Make email optional (store empty string for legacy, and index only non-empty).
+  // If existing schema requires NOT NULL email, we keep column but allow empty.
+  db.run(`UPDATE users SET email = '' WHERE email IS NULL`);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_nonempty_idx ON users(email) WHERE email <> ''`);
+
+  const orderCols = rowsFromStmt(db.prepare(`PRAGMA table_info(orders)`)).map((r) => r.name as string);
+  if (!orderCols.includes("customer_name")) {
+    db.run(`ALTER TABLE orders ADD COLUMN customer_name TEXT`);
+    db.run(`ALTER TABLE orders ADD COLUMN customer_phone TEXT`);
+    db.run(`ALTER TABLE orders ADD COLUMN customer_email TEXT`);
+    // Backfill from user if possible.
+    db.run(`
+      UPDATE orders
+      SET customer_name = COALESCE(customer_name, (SELECT name FROM users u WHERE u.id = orders.user_id)),
+          customer_phone = COALESCE(customer_phone, (SELECT phone FROM users u WHERE u.id = orders.user_id), ''),
+          customer_email = COALESCE(customer_email, (SELECT email FROM users u WHERE u.id = orders.user_id), '')
+      WHERE customer_name IS NULL OR customer_phone IS NULL OR customer_email IS NULL
+    `);
+    db.run(`UPDATE orders SET customer_name = COALESCE(customer_name, 'Customer') WHERE customer_name IS NULL`);
+    db.run(`UPDATE orders SET customer_phone = COALESCE(customer_phone, '') WHERE customer_phone IS NULL`);
+    db.run(`UPDATE orders SET customer_email = COALESCE(customer_email, '') WHERE customer_email IS NULL`);
+  }
 
   const stmt = db.prepare(`SELECT id FROM mobile_settings WHERE id = 'default' LIMIT 1`);
   const has = stmt.step();
@@ -167,6 +213,25 @@ async function ensureSchema(db: Database) {
     }
   }
 
+  // Always ensure default admin credentials exist: username=admin, password=admin123
+  {
+    const stmt3 = db.prepare(`SELECT id FROM users WHERE username = 'admin' LIMIT 1`);
+    const hasAdmin = stmt3.step();
+    stmt3.free();
+    if (!hasAdmin) {
+      const id = uuid();
+      const now = Date.now();
+      const salt = await bcrypt.genSalt(12);
+      const passwordHash = await bcrypt.hash("admin123", salt);
+      db.run(
+        `INSERT INTO users (id, name, username, email, phone, password_hash, role, email_verified, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'ADMIN', 1, ?, ?)`,
+        [id, "Admin", "admin", "admin@local", "admin", passwordHash, now, now],
+      );
+      console.log("[seed] created default admin user: username=admin password=admin123");
+    }
+  }
+
   writeDbFile(db);
 }
 
@@ -182,6 +247,7 @@ function mapUser(row: Row) {
   return {
     id: row.id as string,
     name: row.name as string,
+    username: (row.username as string) ?? (row.id as string),
     email: row.email as string,
     phone: (row.phone as string | null) ?? undefined,
     address: (row.address as string | null) ?? undefined,
@@ -213,9 +279,12 @@ function mapPackage(row: Row) {
 function mapOrder(row: Row) {
   return {
     id: row.id as string,
-    userId: row.user_id as string,
+    userId: (row.user_id as string | null) ?? null,
     packageId: row.package_id as string,
     domain: row.domain as string,
+    customerName: (row.customer_name as string) ?? "Customer",
+    customerPhone: (row.customer_phone as string) ?? "",
+    customerEmail: (row.customer_email as string) ?? "",
     durationMo: row.duration_mo as number,
     amountBdt: row.amount_bdt as number,
     status: row.status as string,
@@ -240,10 +309,45 @@ function mapPayment(row: Row) {
 }
 
 export const db = {
+  async logsAdd(level: "INFO" | "WARN" | "ERROR", message: string, meta?: unknown) {
+    const { db } = await getDb();
+    const id = uuid();
+    const now = nowMs();
+    db.run(
+      `INSERT INTO logs (id, level, message, meta_json, created_at) VALUES (?, ?, ?, ?, ?)`,
+      [id, level, message, meta ? JSON.stringify(meta) : null, now],
+    );
+    writeDbFile(db);
+  },
+
+  async logsList(limit = 100) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT * FROM logs ORDER BY created_at DESC LIMIT ?`);
+    stmt.bind([limit]);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return rows.map((r) => ({
+      id: r.id as string,
+      level: r.level as string,
+      message: r.message as string,
+      meta: r.meta_json ? JSON.parse(r.meta_json as string) : null,
+      createdAt: new Date(r.created_at as number),
+    }));
+  },
+
   async usersFindByEmail(email: string) {
     const { db } = await getDb();
     const stmt = db.prepare(`SELECT * FROM users WHERE email = ? LIMIT 1`);
     stmt.bind([email]);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return rows[0] ? mapUser(rows[0]) : null;
+  },
+
+  async usersFindByUsername(username: string) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT * FROM users WHERE username = ? LIMIT 1`);
+    stmt.bind([username]);
     const rows = rowsFromStmt(stmt);
     stmt.free();
     return rows[0] ? mapUser(rows[0]) : null;
@@ -260,6 +364,7 @@ export const db = {
 
   async usersCreate(data: {
     name: string;
+    username: string;
     email: string;
     phone?: string;
     passwordHash: string;
@@ -272,11 +377,12 @@ export const db = {
     const id = uuid();
     const now = nowMs();
     db.run(
-      `INSERT INTO users (id, name, email, phone, password_hash, role, email_verified, email_verify_code, email_verify_code_expires, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (id, name, username, email, phone, password_hash, role, email_verified, email_verify_code, email_verify_code_expires, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
+        data.username,
         data.email,
         data.phone ?? null,
         data.passwordHash,
@@ -434,9 +540,12 @@ export const db = {
   },
 
   async ordersCreate(data: {
-    userId: string;
+    userId?: string | null;
     packageId: string;
     domain: string;
+    customerName: string;
+    customerPhone: string;
+    customerEmail?: string | null;
     durationMo: number;
     amountBdt: number;
   }) {
@@ -444,9 +553,21 @@ export const db = {
     const id = uuid();
     const now = nowMs();
     db.run(
-      `INSERT INTO orders (id, user_id, package_id, domain, duration_mo, amount_bdt, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
-      [id, data.userId, data.packageId, data.domain, data.durationMo, data.amountBdt, now, now],
+      `INSERT INTO orders (id, user_id, package_id, domain, customer_name, customer_phone, customer_email, duration_mo, amount_bdt, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
+      [
+        id,
+        data.userId ?? null,
+        data.packageId,
+        data.domain,
+        data.customerName,
+        data.customerPhone,
+        data.customerEmail ?? "",
+        data.durationMo,
+        data.amountBdt,
+        now,
+        now,
+      ],
     );
     writeDbFile(db);
     return this.ordersFindById(id);
@@ -461,6 +582,15 @@ export const db = {
     return rows[0] ? mapOrder(rows[0]) : null;
   },
 
+  async ordersFindByPhone(phone: string) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT * FROM orders WHERE customer_phone = ? ORDER BY created_at DESC`);
+    stmt.bind([phone]);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return rows.map(mapOrder);
+  },
+
   async ordersFindForUser(userId: string) {
     const { db } = await getDb();
     const stmt = db.prepare(`SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC`);
@@ -473,6 +603,24 @@ export const db = {
   async ordersFindAll() {
     const { db } = await getDb();
     const stmt = db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return rows.map(mapOrder);
+  },
+
+  async ordersCountByStatus(status: string) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT COUNT(1) as c FROM orders WHERE status = ?`);
+    stmt.bind([status]);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return Number(rows[0]?.c ?? 0);
+  },
+
+  async ordersListRecent(limit = 10) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT * FROM orders ORDER BY created_at DESC LIMIT ?`);
+    stmt.bind([limit]);
     const rows = rowsFromStmt(stmt);
     stmt.free();
     return rows.map(mapOrder);
@@ -529,6 +677,15 @@ export const db = {
     db.run(`UPDATE payments SET status=?, updated_at=? WHERE id=?`, [status, now, id]);
     writeDbFile(db);
     return this.paymentsFindById(id);
+  },
+
+  async paymentsCountByStatus(status: string) {
+    const { db } = await getDb();
+    const stmt = db.prepare(`SELECT COUNT(1) as c FROM payments WHERE status = ?`);
+    stmt.bind([status]);
+    const rows = rowsFromStmt(stmt);
+    stmt.free();
+    return Number(rows[0]?.c ?? 0);
   },
 
   async mobileSettingsGet() {

@@ -11,21 +11,21 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      const name = String(formData.get("name") ?? "");
-      const email = String(formData.get("email") ?? "");
-      const phone = String(formData.get("phone") ?? "") || undefined;
+      const username = String(formData.get("username") ?? "");
+      const phone = String(formData.get("phone") ?? "");
+      const email = String(formData.get("email") ?? "") || undefined;
       const password = String(formData.get("password") ?? "");
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, email, phone, password }),
+        body: JSON.stringify({ username, phone, email, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error ?? "REGISTER_FAILED");
         return;
       }
-      window.location.href = `/verify-email?email=${encodeURIComponent(email)}`;
+      window.location.href = "/dashboard";
     } finally {
       setLoading(false);
     }
@@ -48,21 +48,21 @@ export default function RegisterPage() {
         action={onSubmit}
       >
         <input
-          name="name"
+          name="username"
           required
-          placeholder="Full name"
+          placeholder="Username"
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
         />
         <input
-          name="email"
           type="email"
-          required
-          placeholder="Email"
+          name="email"
+          placeholder="Email (optional)"
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
         />
         <input
           name="phone"
-          placeholder="Phone (optional)"
+          required
+          placeholder="Phone"
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
         />
         <input
@@ -82,12 +82,8 @@ export default function RegisterPage() {
         {error ? (
           <p className="text-sm text-red-700">Error: {error}</p>
         ) : null}
-        <p className="text-xs text-black/60">
-          After registration, an OTP code will be generated (dev: logged to the
-          server console).
-        </p>
+        <p className="text-xs text-black/60">After registration, you’ll be signed in.</p>
       </form>
     </div>
   );
 }
-

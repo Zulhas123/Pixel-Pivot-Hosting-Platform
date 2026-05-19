@@ -5,7 +5,7 @@ import { RateLimitExceeded, rateLimitOrThrow } from "@/lib/rateLimit";
 import { z } from "zod";
 
 const Schema = z.object({
-  email: z.string().email().max(200),
+  username: z.string().min(2).max(50),
   code: z.string().regex(/^\d{6}$/),
   newPassword: z.string().min(8).max(200),
 });
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "VALIDATION_ERROR" }, { status: 400 });
 
-  const user = await db.usersFindByEmail(parsed.data.email);
+  const user = await db.usersFindByUsername(parsed.data.username);
   if (!user || !user.resetCode || !user.resetCodeExpires) {
     return Response.json({ error: "INVALID_CODE" }, { status: 400 });
   }

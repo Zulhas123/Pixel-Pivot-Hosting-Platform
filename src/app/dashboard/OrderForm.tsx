@@ -53,12 +53,12 @@ export function OrderForm({
   }
 
   return (
-    <div className="rounded-xl border border-black/10 p-5 space-y-3">
-      <h2 className="font-medium">Create order</h2>
+    <div className="rounded-xl border border-black/10 p-4 space-y-2">
+      <h2 className="text-sm font-medium">Create order</h2>
       <select
         value={packageId}
         onChange={(e) => setPackageId(e.target.value)}
-        className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
+        className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
       >
         {packages.map((p) => (
           <option key={p.id} value={p.id}>
@@ -70,7 +70,7 @@ export function OrderForm({
         value={domain}
         onChange={(e) => setDomain(e.target.value)}
         placeholder="Domain (e.g. example.com)"
-        className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
+        className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
       />
       <input
         value={durationMo}
@@ -78,20 +78,19 @@ export function OrderForm({
         type="number"
         min={1}
         max={60}
-        className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
+        className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
       />
-      <p className="text-sm text-black/70">Estimated total: ৳{estimated}</p>
+      <p className="text-xs text-black/70">Estimated total: ৳{estimated}</p>
       <button
         type="button"
         disabled={loading || !packageId || !domain}
         onClick={submit}
-        className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+        className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
       >
         {loading ? "Creating…" : "Create order"}
       </button>
-      {ok ? <p className="text-sm text-green-700">Order created.</p> : null}
-      {error ? <p className="text-sm text-red-700">Error: {error}</p> : null}
+      {ok ? <p className="text-xs text-green-700">Order created.</p> : null}
+      {error ? <p className="text-xs text-red-700">Error: {error}</p> : null}
     </div>
   );
 }
-

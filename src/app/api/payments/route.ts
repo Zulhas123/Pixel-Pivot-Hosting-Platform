@@ -8,12 +8,10 @@ const CreatePaymentSchema = z.object({
   senderNumber: z.string().min(6).max(30),
   trxId: z.string().min(4).max(80),
   amountBdt: z.number().int().min(1),
+  customerPhone: z.string().min(6).max(30).optional(),
 });
 
 export async function POST(req: Request) {
-  const auth = await requireSession();
-  if (!auth.ok) return Response.json({ error: auth.error }, { status: 401 });
-
   const body = await req.json().catch(() => null);
   const parsed = CreatePaymentSchema.safeParse(body);
   if (!parsed.success) {
@@ -23,9 +21,23 @@ export async function POST(req: Request) {
     );
   }
 
+  const auth = await requireSession();
+  const isAuthed = auth.ok;
+
   const order = await db.ordersFindById(parsed.data.orderId);
-  if (!order || order.userId !== auth.session.sub) {
-    return Response.json({ error: "ORDER_NOT_FOUND" }, { status: 404 });
+  if (!order) return Response.json({ error: "ORDER_NOT_FOUND" }, { status: 404 });
+
+  if (isAuthed) {
+    if (order.userId !== auth.session.sub) {
+      return Response.json({ error: "ORDER_NOT_FOUND" }, { status: 404 });
+    }
+  } else {
+    if (!parsed.data.customerPhone) {
+      return Response.json({ error: "CUSTOMER_PHONE_REQUIRED" }, { status: 400 });
+    }
+    if (order.customerPhone !== parsed.data.customerPhone) {
+      return Response.json({ error: "ORDER_NOT_FOUND" }, { status: 404 });
+    }
   }
 
   if (parsed.data.amountBdt !== order.amountBdt) {
@@ -44,6 +56,12 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "DUPLICATE_TRX" }, { status: 409 });
   }
+
+  await db.logsAdd("INFO", "payment_submitted", {
+    orderId: order.id,
+    paymentId: payment?.id,
+    by: isAuthed ? "user" : "guest",
+  });
 
   return Response.json({ ok: true, payment }, { status: 201 });
 }

@@ -5,10 +5,13 @@ import { useEffect, useState } from "react";
 
 type MeResponse =
   | { user: null }
-  | { user: { id: string; role: string; email: string; name: string } };
+  | { user: { id: string; role: string; username: string; email: string | null; name: string } };
 
 export function NavBar() {
   const [me, setMe] = useState<MeResponse>({ user: null });
+  const [notif, setNotif] = useState<{ pendingOrders: number; pendingPayments: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -22,6 +25,23 @@ export function NavBar() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!me.user || me.user.role !== "ADMIN") return;
+    let cancelled = false;
+    async function tick() {
+      const res = await fetch("/api/admin/notifications", { cache: "no-store" }).catch(() => null);
+      if (!res || !res.ok) return;
+      const data = await res.json();
+      if (!cancelled) setNotif({ pendingOrders: data.pendingOrders ?? 0, pendingPayments: data.pendingPayments ?? 0 });
+    }
+    tick().catch(() => {});
+    const t = window.setInterval(() => tick().catch(() => {}), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [me.user]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -53,9 +73,23 @@ export function NavBar() {
                 Dashboard
               </Link>
               {me.user.role === "ADMIN" ? (
-                <Link href="/admin" className="text-black/80 hover:text-black">
-                  Admin
-                </Link>
+                <>
+                  <Link href="/admin" className="text-black/80 hover:text-black">
+                    Settings
+                  </Link>
+                  <Link
+                    href="/admin"
+                    className="relative rounded-md border border-black/10 px-3 py-1.5 hover:bg-black/5"
+                    title="Notifications"
+                  >
+                    Notifications
+                    {notif && notif.pendingOrders + notif.pendingPayments > 0 ? (
+                      <span className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        {notif.pendingOrders + notif.pendingPayments}
+                      </span>
+                    ) : null}
+                  </Link>
+                </>
               ) : null}
               <button
                 type="button"
@@ -86,4 +120,3 @@ export function NavBar() {
     </header>
   );
 }
-

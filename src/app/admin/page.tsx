@@ -10,13 +10,12 @@ export default async function AdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Admin Panel</h1>
+        <h1 className="text-2xl font-semibold">Admin Settings</h1>
         <p className="mt-2 text-sm text-black/70">
-          Manage packages, verify payments, and configure mobile banking numbers.
+          Add packages, review orders, confirm payments, and view system logs.
         </p>
       </div>
       <AdminPanel />
     </div>
   );
 }
-

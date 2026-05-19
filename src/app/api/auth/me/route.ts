@@ -7,9 +7,9 @@ export async function GET() {
     user: {
       id: session.sub,
       role: session.role,
-      email: session.email,
+      username: session.username,
+      email: session.email ?? null,
       name: session.name,
     },
   });
 }
-

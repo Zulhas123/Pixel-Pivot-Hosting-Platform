@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [sent, setSent] = useState(false);
 
   async function submit() {
@@ -12,7 +12,7 @@ export default function ForgotPasswordPage() {
     await fetch("/api/auth/forgot-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ username }),
     });
     setSent(true);
   }
@@ -27,10 +27,9 @@ export default function ForgotPasswordPage() {
       </div>
       <div className="rounded-xl border border-black/10 p-5 space-y-3">
         <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type="email"
-          placeholder="Email"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Username"
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
         />
         <button
@@ -43,7 +42,7 @@ export default function ForgotPasswordPage() {
         {sent ? (
           <p className="text-sm text-green-700">
             Sent. Continue to{" "}
-            <Link className="underline" href={`/reset-password?email=${encodeURIComponent(email)}`}>
+            <Link className="underline" href={`/reset-password?username=${encodeURIComponent(username)}`}>
               reset password
             </Link>
             .
@@ -53,4 +52,3 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
-

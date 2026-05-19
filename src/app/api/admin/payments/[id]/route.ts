@@ -26,5 +26,11 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/payments/[
     if (updated) await db.ordersUpdateStatus(updated.orderId, "APPROVED");
   }
 
+  await db.logsAdd("INFO", "payment_status_updated", {
+    paymentId: id,
+    status: parsed.data.status,
+    adminId: admin.session.sub,
+  });
+
   return Response.json({ ok: true, payment: updated });
 }

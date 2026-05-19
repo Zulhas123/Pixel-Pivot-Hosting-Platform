@@ -17,6 +17,10 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/orders/[id
 
   const updated = await db.ordersUpdateStatus(id, parsed.data.status);
   if (!updated) return Response.json({ error: "NOT_FOUND" }, { status: 404 });
+  await db.logsAdd("INFO", "order_status_updated", {
+    orderId: id,
+    status: parsed.data.status,
+    adminId: admin.session.sub,
+  });
   return Response.json({ ok: true, order: updated });
 }
-

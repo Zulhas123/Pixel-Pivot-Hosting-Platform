@@ -6,6 +6,9 @@ const CreateOrderSchema = z.object({
   packageId: z.string().min(1),
   domain: z.string().min(1).max(253),
   durationMo: z.number().int().min(1).max(60),
+  customerName: z.string().min(2).max(80).optional(),
+  customerPhone: z.string().min(6).max(30).optional(),
+  customerEmail: z.string().email().max(200).optional(),
 });
 
 export async function GET(req: Request) {
@@ -18,7 +21,7 @@ export async function GET(req: Request) {
     const hydrated = await Promise.all(
       orders.map(async (o) => {
         const [user, pkg, payments] = await Promise.all([
-          db.usersFindById(o.userId),
+          o.userId ? db.usersFindById(o.userId) : Promise.resolve(null),
           db.packagesFindById(o.packageId),
           db.paymentsFindForOrder(o.id),
         ]);
@@ -26,7 +29,7 @@ export async function GET(req: Request) {
           ...o,
           user: user
             ? { id: user.id, email: user.email, name: user.name }
-            : { id: o.userId, email: "unknown", name: "Unknown" },
+            : { id: o.userId ?? "guest", email: "guest", name: o.customerName ?? "Guest" },
           package: pkg ?? { id: o.packageId, title: "Unknown package", type: "", priceBdt: 0, storageGb: 0, bandwidthGb: 0, features: "", isActive: false, createdAt: new Date(0), updatedAt: new Date(0) },
           payments,
         };
@@ -52,9 +55,6 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireSession();
-  if (!auth.ok) return Response.json({ error: auth.error }, { status: 401 });
-
   const body = await req.json().catch(() => null);
   const parsed = CreateOrderSchema.safeParse(body);
   if (!parsed.success) {
@@ -69,13 +69,42 @@ export async function POST(req: Request) {
 
   const amountBdt = pkg.priceBdt * parsed.data.durationMo;
 
+  const auth = await requireSession();
+  const isAuthed = auth.ok;
+
+  if (!isAuthed) {
+    if (!parsed.data.customerName || !parsed.data.customerPhone) {
+      return Response.json({ error: "CUSTOMER_INFO_REQUIRED" }, { status: 400 });
+    }
+  }
+
+  const userPhone = isAuthed ? (await db.usersFindById(auth.session.sub))?.phone ?? "" : "";
+  const customerName = isAuthed ? auth.session.name : parsed.data.customerName ?? "Customer";
+  const customerPhone = isAuthed ? userPhone : parsed.data.customerPhone ?? "";
+
   const order = await db.ordersCreate({
-    userId: auth.session.sub,
+    userId: isAuthed ? auth.session.sub : null,
     packageId: pkg.id,
     domain: parsed.data.domain.toLowerCase(),
+    customerName,
+    customerPhone,
+    customerEmail: isAuthed ? (auth.session.email ?? "") : parsed.data.customerEmail ?? "",
     durationMo: parsed.data.durationMo,
     amountBdt,
   });
 
-  return Response.json({ ok: true, order: { ...order, package: pkg, payments: [] } }, { status: 201 });
+  await db.logsAdd("INFO", "order_created", {
+    orderId: order?.id,
+    packageId: pkg.id,
+    domain: parsed.data.domain,
+    by: isAuthed ? "user" : "guest",
+  });
+
+  return Response.json(
+    {
+      ok: true,
+      order: { ...order, package: pkg, payments: [] },
+    },
+    { status: 201 },
+  );
 }

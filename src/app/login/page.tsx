@@ -11,12 +11,12 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const email = String(formData.get("email") ?? "");
+      const username = String(formData.get("username") ?? "");
       const password = String(formData.get("password") ?? "");
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -46,10 +46,9 @@ export default function LoginPage() {
         action={onSubmit}
       >
         <input
-          name="email"
-          type="email"
+          name="username"
           required
-          placeholder="Email"
+          placeholder="Username"
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
         />
         <input
@@ -70,10 +69,13 @@ export default function LoginPage() {
           <p className="text-sm text-red-700">Error: {error}</p>
         ) : null}
         <p className="text-xs text-black/60">
-          If you just registered, verify your email first.
+          Forgot your password?{" "}
+          <Link href="/forgot-password" className="text-blue-700 hover:underline">
+            Reset it
+          </Link>
+          .
         </p>
       </form>
     </div>
   );
 }
-

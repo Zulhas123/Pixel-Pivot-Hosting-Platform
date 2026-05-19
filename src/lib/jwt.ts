@@ -5,8 +5,9 @@ const encoder = new TextEncoder();
 export type SessionTokenPayload = {
   sub: string;
   role: "CUSTOMER" | "ADMIN" | "SUPPORT";
-  email: string;
+  username: string;
   name: string;
+  email?: string;
 };
 
 function getJwtSecret() {
@@ -27,4 +28,3 @@ export async function verifySessionToken(token: string) {
   const { payload } = await jwtVerify(token, getJwtSecret());
   return payload as unknown as SessionTokenPayload & { exp: number; iat: number };
 }
-
